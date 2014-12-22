@@ -1,0 +1,25 @@
+{
+  "name": "remote",
+  "version": "1.0.0",
+  "author": "Zack YL Shih",
+  "email": "ZackYL.Shih@moxa.com",
+  "description": "Proxying all local views.",
+  "license": "MIT",
+  "main": "agent.py",
+  "argument": "",
+  "priority": 20,
+  "hook": [],
+  "dependencies": {},
+  "repository": "git@github.com:Sanji-IO/sanji-bundle-remote.git",
+  "ttl": 60,
+  "role": "model",
+  "resources": [
+    {
+      "role": "view",
+      "resource": "/#"
+    },
+    {
+      "resource": "/remote/:to_id"
+    }
+  ]
+}

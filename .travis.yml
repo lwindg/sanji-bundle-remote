@@ -1,0 +1,16 @@
+language: python
+install:
+  - pip install -r tests/requirements.txt
+  - pip install -r requirements.txt
+  - pip install tox
+script: make tox
+env:
+  - TOXENV=py26
+  - TOXENV=py27
+  - TOXENV=pypy
+after_success:
+  coveralls
+notifications:
+  slack:
+    rooms:
+      - sys:yeTvjm0bw1tX6MBWrfkVL5RG#travis
