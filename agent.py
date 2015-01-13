@@ -48,20 +48,18 @@ def restart_broker():
 class Index(Sanji):
 
     def init(self, *args, **kwargs):
-        self.__CLIENT_ID__ = os.getenv("CG_ID", 'cg-id-%s' % uuid.uuid4().hex)
-        self.__SERVER_ID__ = os.getenv("CS_ID", 'cs-id-%s' % uuid.uuid4().hex)
+        self.__CLIENT_ID__ = os.getenv(
+            "LOCAL_ID", 'local-%s' % uuid.uuid4().hex)
+        self.__SERVER_ID__ = os.getenv(
+            "REMOTE_ID", 'remote-%s' % uuid.uuid4().hex)
         self.__REMOTE_IP__ = os.getenv("REMOTE_IP", None)
         self.__REMOTE_PORT__ = os.getenv("REMOTE_PORT", 1883)
 
-        print os.getenv("REMOTE_IP", None)
-
-        if self.__REMOTE_IP__ is None:
-            raise ValueError("ENV: REMOTE_IP is not set")
-
-        generate_conf(
-            self.__CLIENT_ID__, "%s %s" % (self.__REMOTE_IP__,
-                                           self.__REMOTE_PORT__))
-        restart_broker()
+        if self.__REMOTE_IP__ is not None:
+            generate_conf(
+                self.__CLIENT_ID__, "%s %s" % (self.__REMOTE_IP__,
+                                               self.__REMOTE_PORT__))
+            restart_broker()
 
     def run(self):
         self._conn.set_tunnel('remote', "/remote")
