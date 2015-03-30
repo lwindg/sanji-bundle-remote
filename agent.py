@@ -13,12 +13,13 @@ from sanji.session import TimeoutError
 from sanji.connection.mqtt import Mqtt
 
 logger = logging.getLogger()
+prefixPath = os.path.dirname(os.path.realpath(__file__))
 
 
 def generate_conf(
     id,
     address,
-    templ_file="./conf/bridge.conf.tmpl",
+    templ_file="%s/conf/bridge.conf.tmpl" % prefixPath,
     conf_file="/etc/mosquitto/conf.d/sanji.conf"
 ):
     """ Generate mosquitto conf from Template """
@@ -48,41 +49,49 @@ def restart_broker():
 class Index(Sanji):
 
     def init(self, *args, **kwargs):
-        self.__CLIENT_ID__ = os.getenv(
-            "LOCAL_ID", 'local-%s' % uuid.uuid4().hex)
-        self.__SERVER_ID__ = os.getenv(
-            "REMOTE_ID", 'remote-%s' % uuid.uuid4().hex)
         self.__REMOTE_IP__ = os.getenv("REMOTE_IP", None)
         self.__REMOTE_PORT__ = os.getenv("REMOTE_PORT", 1883)
+        self.__REMOTE_ID__ = os.getenv("REMOTE_ID", None)
+        self.__LOCAL_ID__ = os.getenv(
+            "LOCAL_ID", 'LOCAL_ID-%s' % uuid.uuid4().hex)
 
-        if self.__REMOTE_IP__ is not None:
+        if self.__REMOTE_ID__ is not None:
+            logger.debug("Running in client mode")
             generate_conf(
-                self.__CLIENT_ID__, "%s %s" % (self.__REMOTE_IP__,
-                                               self.__REMOTE_PORT__))
+                self.__LOCAL_ID__, "%s %s" % (self.__REMOTE_IP__,
+                                              self.__REMOTE_PORT__))
             restart_broker()
+        else:
+            logger.debug("Running in server mode")
 
     def run(self):
+        if self.__REMOTE_ID__ is None:
+            self._conn.set_tunnel(
+                'remote_server', "/%s/remote" % self.__LOCAL_ID__)
         self._conn.set_tunnel('remote', "/remote")
 
     @Route(resource="/.*")
     def event_proxy(self, message):
         """ View callback (self, message) """
+        if self.__REMOTE_ID__ is None:
+            return
         if "/remote" in message.resource:  # don't proxy self's req's response
             return
 
         # send to remote broker
         getattr(self.publish.event, message.method)(
-            "/%s%s" % (self.__CLIENT_ID__, message.resource),
-            topic="/%s/controller" % self.__SERVER_ID__,
+            "/%s%s" % (self.__LOCAL_ID__, message.resource),
+            topic="/%s/controller" % self.__REMOTE_ID__,
             data=getattr(message, 'data', None))
 
     @Route(resource="/remote/:to_id")
     def remote(self, message, response):
         """ model callback (self, message, responsse) """
         try:
-            result = getattr(self.publish, message.data["method"])(
-                message.resource,
-                topic="/%s/remote" % message.param["to_id"],
+            result = getattr(self.publish.direct, message.data["method"])(
+                message.data["resource"],
+                topic="/%s/controller" % message.param["to_id"],
+                tunnel="/%s/remote" % self.__LOCAL_ID__,
                 data=message.data["data"])
             return response(code=result.code, data=result.to_dict())
         except TimeoutError:

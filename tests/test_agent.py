@@ -78,6 +78,7 @@ class TestIndexClass(unittest.TestCase):
     def setUp(self, generate_conf, restart_broker):
         os.environ["REMOTE_IP"] = "192.168.1.254"
         self.index = Index(connection=Mockup())
+        self.index.__REMOTE_ID__ = "This-is-__REMOTE_ID__"
 
     def tearDown(self):
         self.index.stop()
@@ -93,8 +94,8 @@ class TestIndexClass(unittest.TestCase):
         self.index.event_proxy(msg, test=True)
         self.assertEqual(
             self.index.publish.event.get.mock_calls[0],
-            call('/%s/system/time' % self.index.__CLIENT_ID__,
-                 topic='/%s/controller' % self.index.__SERVER_ID__,
+            call('/%s/system/time' % self.index.__LOCAL_ID__,
+                 topic='/%s/controller' % self.index.__REMOTE_ID__,
                  data=None))
 
     def test_remote(self):
@@ -121,7 +122,7 @@ class TestIndexClass(unittest.TestCase):
             "data": {}
         }, generate_id=False)
 
-        self.index.publish.get = MagicMock(return_value=resp_msg)
+        self.index.publish.direct.get = MagicMock(return_value=resp_msg)
         resp = Mock()
         self.index.remote(msg, resp, test=True)
         resp.assert_called_once_with(code=200, data=resp_msg.to_dict())
@@ -141,7 +142,7 @@ class TestIndexClass(unittest.TestCase):
                 "data": {}
             }
         }, generate_id=False)
-        self.index.publish.get = Mock(side_effect=TimeoutError())
+        self.index.publish.direct.get = Mock(side_effect=TimeoutError())
         resp = Mock()
         self.index.remote(msg, resp, test=True)
         resp.assert_called_once_with(
