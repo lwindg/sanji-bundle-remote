@@ -16,24 +16,36 @@ logger = logging.getLogger()
 prefixPath = os.path.dirname(os.path.realpath(__file__))
 
 
-def generate_conf(
-    id,
-    address,
-    templ_file="%s/conf/bridge.conf.tmpl" % prefixPath,
-    conf_file="/etc/mosquitto/conf.d/sanji.conf"
-):
+# ="%s/conf/bridge.conf.tmpl" % prefixPath
+def generate_conf(data, templ_file, conf_file):
     """ Generate mosquitto conf from Template """
 
-    logger.debug("load bridge config template")
+    logger.debug("load %s config template", (templ_file,))
     with open(templ_file) as f:
         template_str = f.read()
     tmpl = Template(template_str)
 
-    logger.debug("write bridge.conf to %s" % conf_file)
+    logger.debug("write config file to %s" % conf_file)
+    with open(conf_file, "w") as f:
+        f.write(tmpl.substitute(data))
+
+
+def generate_server_conf(
+    port,
+    templ_file="%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
+    conf_file="/etc/mosquitto/conf.d/tls_psk_listener.conf"
+):
+    """ Generate mosquitto conf from Template """
+
+    logger.debug("load tls_psk_listener config template")
+    with open(templ_file) as f:
+        template_str = f.read()
+    tmpl = Template(template_str)
+
+    logger.debug("write tls_psk_listener.conf to %s" % conf_file)
     with open(conf_file, "w") as f:
         f.write(tmpl.substitute({
-            "address": address,
-            "id": id
+            "port": port
         }))
 
 
@@ -49,20 +61,61 @@ def restart_broker():
 class Index(Sanji):
 
     def init(self, *args, **kwargs):
-        self.__REMOTE_IP__ = os.getenv("REMOTE_IP", None)
-        self.__REMOTE_PORT__ = os.getenv("REMOTE_PORT", 1883)
-        self.__REMOTE_ID__ = os.getenv("REMOTE_ID", None)
+        # Local Broker
+        self.__LOCAL_HOST__ = os.getenv("LOCAL_HOST", "localhost")
+        self.__LOCAL_PORT__ = os.getenv("LOCAL_PORT", 1883)
         self.__LOCAL_ID__ = os.getenv(
             "LOCAL_ID", 'LOCAL_ID-%s' % uuid.uuid4().hex)
 
+        # Bridge to Remote Broker
+        self.__REMOTE_HOST__ = os.getenv("REMOTE_HOST", None)
+        self.__REMOTE_PORT__ = os.getenv("REMOTE_PORT", 1883)
+        self.__REMOTE_ID__ = os.getenv("REMOTE_ID", None)
+        self.__BG_ID__ = os.getenv("BG_ID", None)
+        self.__BG_PSK__ = os.getenv("BG_PSK", None)
+
+        # Setup for PSK encrypt port
+        self.__ENCRYPT_PORT__ = os.getenv("ENCRYPT_PORT", None)
+        self.__PSK_FILE__ = os.getenv(
+            "PSK_FILE", "/etc/mosquitto/psk-list")
+        self.__PSK_HINT__ = os.getenv("PSK_HINT", "hint")
+
+        # Generate general config file
+        generate_conf({
+            "local_host": self.__LOCAL_HOST__,
+            "local_port": self.__LOCAL_PORT__
+        },
+            "%s/conf/mosquitto.conf.tmpl" % prefixPath,
+            "/etc/mosquitto/mosquitto.conf"
+        )
+
+        if self.__ENCRYPT_PORT__ is not None:
+            generate_conf({
+                "encrypt_port": self.__ENCRYPT_PORT__,
+                "psk_file": self.__PSK_FILE__,
+                "psk_hint": self.__PSK_HINT__
+            },
+                "%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
+                "/etc/mosquitto/conf.d/tls_psk_listener.conf"
+            )
+            logger.debug("Enable encrypt port: %s with psk-file: %s" %
+                         (self.__ENCRYPT_PORT__, self.__PSK_FILE__))
+
         if self.__REMOTE_ID__ is not None:
-            logger.debug("Running in client mode")
-            generate_conf(
-                self.__LOCAL_ID__, "%s %s" % (self.__REMOTE_IP__,
-                                              self.__REMOTE_PORT__))
+            # TODO: no provide BG_ID, BG_PSK
+            generate_conf({
+                "id": self.__LOCAL_ID__,
+                "address": "%s:%s" % (self.__REMOTE_HOST__,
+                                      self.__REMOTE_PORT__),
+                "bridge_identity": self.__BG_ID__,
+                "bridge_psk": self.__BG_PSK__
+            },
+                "%s/conf/bridge.conf.tmpl" % prefixPath,
+                "/etc/mosquitto/conf.d/sanji.conf"
+            )
+            logger.debug("Enable bridge mode connect to: %s:%s" %
+                         (self.__REMOTE_HOST__, self.__REMOTE_PORT__))
             restart_broker()
-        else:
-            logger.debug("Running in server mode")
 
     def run(self):
         if self.__REMOTE_ID__ is None:

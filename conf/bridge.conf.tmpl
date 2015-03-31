@@ -1,7 +1,11 @@
-connection sanji-remote
+connection sanji-remote-$id
 address $address
 clientid $id
 cleansession true
 topic # in 2 / /$id/
 topic /+/controller out 2
 topic /+/remote out 2
+notifications true
+notification_topic /cgs/$id/connection_status
+bridge_identity $bridge_identity
+bridge_psk $bridge_psk

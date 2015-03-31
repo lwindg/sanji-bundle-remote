@@ -31,12 +31,14 @@ except ImportError as e:
 
 class TestFunctionClass(unittest.TestCase):
 
-    def test_generate_conf(self):
+    def test_generate_bridge_conf(self):
         """ should generate bridge config """
-        output = "connection sanji-remote\naddress localhost\n" +\
+        output = "connection sanji-remote-test-id\naddress localhost\n" +\
                  "clientid test-id\ncleansession true\n" +\
                  "topic # in 2 / /test-id/\ntopic /+/controller out 2\n" +\
-                 "topic /+/remote out 2\n"
+                 "topic /+/remote out 2\nnotifications true\n" +\
+                 "notification_topic /cgs/test-id/connection_status\n" +\
+                 "bridge_identity test_id\nbridge_psk test_psk\n"
         path = os.path.dirname(os.path.realpath(__file__))
 
         with open(path + "/../conf/bridge.conf.tmpl") as f:
@@ -45,16 +47,85 @@ class TestFunctionClass(unittest.TestCase):
             with patch("agent.open", m, create=True):
                 mock = m()
                 mock.read.return_value = tmpl
-                generate_conf(
-                    "test-id",
-                    "localhost",
-                    templ_file=path + "/../conf/bridge.conf.tmpl",
-                    conf_file="/tmp/test-bridge.conf")
+                generate_conf({
+                    "id": "test-id",
+                    "address": "localhost",
+                    "bridge_identity": "test_id",
+                    "bridge_psk": "test_psk"
+                },
+                    path + "/../conf/bridge.conf.tmpl",
+                    "/tmp/test-bridge.conf"
+                )
 
                 self.assertEqual(m.mock_calls[1],
                                  call(path + "/../conf/bridge.conf.tmpl"))
                 self.assertEqual(m.mock_calls[5],
                                  call("/tmp/test-bridge.conf", "w"))
+
+            mock = m()
+            mock.write.assert_called_once_with(output)
+
+    def test_generate_encrypt_conf(self):
+        """ should generate encrypt config """
+        output = "listener 8883\n" +\
+                 "psk_file /etc/mosquitto/psk-list\n" +\
+                 "psk_hint hint\n"
+
+        path = os.path.dirname(os.path.realpath(__file__))
+        with open(path + "/../conf/tls_psk_listener.conf.tmpl") as f:
+            tmpl = f.read()
+            m = mock_open()
+            with patch("agent.open", m, create=True):
+                mock = m()
+                mock.read.return_value = tmpl
+                generate_conf({
+                    "encrypt_port": 8883,
+                    "psk_file": "/etc/mosquitto/psk-list",
+                    "psk_hint": "hint"
+                },
+                    path + "/../conf/tls_psk_listener.conf.tmpl",
+                    "/tmp/tls_psk_listener.conf"
+                )
+
+                self.assertEqual(
+                    m.mock_calls[1],
+                    call(path + "/../conf/tls_psk_listener.conf.tmpl"))
+                self.assertEqual(
+                    m.mock_calls[5],
+                    call("/tmp/tls_psk_listener.conf", "w"))
+
+            mock = m()
+            mock.write.assert_called_once_with(output)
+
+    def test_generate_general_conf(self):
+        """ should generate mosquitto config """
+        output = "bind_address localhost\n" +\
+                 "port 1883\npid_file /var/run/mosquitto.pid\n" +\
+                 "persistence false\n" +\
+                 "log_dest file /var/log/mosquitto/mosquitto.log\n" +\
+                 "include_dir /etc/mosquitto/conf.d\n"
+
+        path = os.path.dirname(os.path.realpath(__file__))
+        with open(path + "/../conf/mosquitto.conf.tmpl") as f:
+            tmpl = f.read()
+            m = mock_open()
+            with patch("agent.open", m, create=True):
+                mock = m()
+                mock.read.return_value = tmpl
+                generate_conf({
+                    "local_host": "localhost",
+                    "local_port": 1883
+                },
+                    path + "/../conf/mosquitto.conf.tmpl",
+                    "/tmp/mosquitto.conf"
+                )
+
+                self.assertEqual(
+                    m.mock_calls[1],
+                    call(path + "/../conf/mosquitto.conf.tmpl"))
+                self.assertEqual(
+                    m.mock_calls[5],
+                    call("/tmp/mosquitto.conf", "w"))
 
             mock = m()
             mock.write.assert_called_once_with(output)
@@ -76,7 +147,7 @@ class TestIndexClass(unittest.TestCase):
     @patch("agent.restart_broker")
     @patch("agent.generate_conf")
     def setUp(self, generate_conf, restart_broker):
-        os.environ["REMOTE_IP"] = "192.168.1.254"
+        os.environ["REMOTE_HOST"] = "192.168.1.254"
         self.index = Index(connection=Mockup())
         self.index.__REMOTE_ID__ = "This-is-__REMOTE_ID__"
 
