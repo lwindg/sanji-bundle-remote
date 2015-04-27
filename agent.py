@@ -16,10 +16,8 @@ logger = logging.getLogger()
 prefixPath = os.path.dirname(os.path.realpath(__file__))
 
 
-# ="%s/conf/bridge.conf.tmpl" % prefixPath
 def generate_conf(data, templ_file, conf_file):
     """ Generate mosquitto conf from Template """
-
     logger.debug("load %s config template", (templ_file,))
     with open(templ_file) as f:
         template_str = f.read()
@@ -55,7 +53,12 @@ def restart_broker():
         return True
     except Exception as e:
         logger.debug("restart error: %s" % e)
-        return False
+        try:
+            sh.killall("mosquitto")
+            sh.mosquitto("-c", "/etc/mosquitto/mosquitto.conf", _bg=True)
+        except Exception, e:
+            return False
+        return True
 
 
 class Index(Sanji):
@@ -153,6 +156,10 @@ class Index(Sanji):
 
 
 if __name__ == "__main__":
+    # disabling sh logger
+    sh_logger = logging.getLogger("sh")
+    sh_logger.propagate = False
+    sh_logger.addHandler(logging.NullHandler())
     FORMAT = "%(asctime)s - %(levelname)s - %(lineno)s - %(message)s"
     logging.basicConfig(level=0, format=FORMAT)
     logger = logging.getLogger("Remote")
