@@ -123,16 +123,24 @@ class Index(Sanji):
     def run(self):
         if self.__REMOTE_ID__ is None:
             self._conn.set_tunnel(
-                'remote_server', "/%s/remote" % self.__LOCAL_ID__)
+                'remote_agent', "/%s/remote" % self.__LOCAL_ID__)
+            self._conn.set_tunnel(
+                'remote_controller', "/%s/controller" % self.__LOCAL_ID__)
         self._conn.set_tunnel('remote', "/remote")
 
     @Route(resource="/.*")
     def event_proxy(self, message):
         """ View callback (self, message) """
-        if self.__REMOTE_ID__ is None:
-            return
         if "/remote" in message.resource:  # don't proxy self's req's response
             return
+
+        if self.__REMOTE_ID__ is None:
+            # convert remote event to local
+            if message.resource[:4] == "/cg-":
+                getattr(self.publish.event, message.method)(
+                    message.resource,
+                    data=getattr(message, 'data', None))
+                return
 
         # send to remote broker
         getattr(self.publish.event, message.method)(
