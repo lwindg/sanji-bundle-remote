@@ -21,6 +21,10 @@
     },
     {
       "resource": "/remote/:to_id"
+    },
+    {
+      "methods": "put",
+      "resource": "/system/remote"
     }
   ]
 }

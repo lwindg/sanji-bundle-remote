@@ -12,18 +12,18 @@ from sanji.core import Route
 from sanji.session import TimeoutError
 from sanji.connection.mqtt import Mqtt
 
-logger = logging.getLogger()
+_logger = logging.getLogger("sanji.remote")
 prefixPath = os.path.dirname(os.path.realpath(__file__))
 
 
 def generate_conf(data, templ_file, conf_file):
     """ Generate mosquitto conf from Template """
-    logger.debug("load %s config template", (templ_file,))
+    _logger.debug("load %s config template", (templ_file,))
     with open(templ_file) as f:
         template_str = f.read()
     tmpl = Template(template_str)
 
-    logger.debug("write config file to %s" % conf_file)
+    _logger.debug("write config file to %s" % conf_file)
     with open(conf_file, "w") as f:
         f.write(tmpl.substitute(data))
 
@@ -35,30 +35,40 @@ def generate_server_conf(
 ):
     """ Generate mosquitto conf from Template """
 
-    logger.debug("load tls_psk_listener config template")
+    _logger.debug("load tls_psk_listener config template")
     with open(templ_file) as f:
         template_str = f.read()
     tmpl = Template(template_str)
 
-    logger.debug("write tls_psk_listener.conf to %s" % conf_file)
+    _logger.debug("write tls_psk_listener.conf to %s" % conf_file)
     with open(conf_file, "w") as f:
         f.write(tmpl.substitute({
             "port": port
         }))
 
 
-def restart_broker():
+def restart_broker(process=None):
     try:
-        sh.service("mosquitto", "restart", _timeout=30)
-        return True
+        if process:
+            _logger.debug("Killing previous broker via process")
+            process.kill()
+        else:
+            try:
+                pid = sh.awk(
+                    sh.grep(sh.ps("ax"), "sanji-bridge"), "{print $1}").split()
+                sh.kill(" ".join(pid))
+                _logger.debug("Killing previous broker via pid")
+            except:
+                pass
+
+        ret = sh.mosquitto(
+            "-c", "/etc/mosquitto/sanji-bridge.conf", _bg=True)
+        _logger.debug("Bridge broker started.")
+
+        return ret.process
     except Exception as e:
-        logger.debug("restart error: %s" % e)
-        try:
-            sh.killall("mosquitto")
-            sh.mosquitto("-c", "/etc/mosquitto/mosquitto.conf", _bg=True)
-        except Exception, e:
-            return False
-        return True
+        _logger.debug("restart error: %s" % str(e), exc_info=True)
+        return None
 
 
 class Index(Sanji):
@@ -101,24 +111,27 @@ class Index(Sanji):
                 "%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
                 "/etc/mosquitto/conf.d/tls_psk_listener.conf"
             )
-            logger.debug("Enable encrypt port: %s with psk-file: %s" %
-                         (self.__ENCRYPT_PORT__, self.__PSK_FILE__))
+            _logger.debug("Enable encrypt port: %s with psk-file: %s" %
+                          (self.__ENCRYPT_PORT__, self.__PSK_FILE__))
 
         if self.__REMOTE_ID__ is not None:
-            # TODO: no provide BG_ID, BG_PSK
+            bridge_secret = ""
+            if self.__BG_ID__ is not None and self.__BG_PSK__ is not None:
+                bridge_secret = ("bridge_identity %s\nbridge_psk %s" %
+                                 (self.__BG_ID__, self.__BG_PSK__,))
+
             generate_conf({
                 "id": self.__LOCAL_ID__,
                 "address": "%s:%s" % (self.__REMOTE_HOST__,
                                       self.__REMOTE_PORT__),
-                "bridge_identity": self.__BG_ID__,
-                "bridge_psk": self.__BG_PSK__
+                "bridge_secret": bridge_secret
             },
                 "%s/conf/bridge.conf.tmpl" % prefixPath,
-                "/etc/mosquitto/conf.d/sanji.conf"
+                "/etc/mosquitto/sanji-bridge.conf"
             )
-            logger.debug("Enable bridge mode connect to: %s:%s" %
-                         (self.__REMOTE_HOST__, self.__REMOTE_PORT__))
-            restart_broker()
+            _logger.debug("Enable bridge mode connect to: %s:%s" %
+                          (self.__REMOTE_HOST__, self.__REMOTE_PORT__))
+            self.bridge_process = restart_broker(None)
 
     def run(self):
         if self.__REMOTE_ID__ is None:
@@ -154,14 +167,26 @@ class Index(Sanji):
             return response(
                 code=500, data={"message": "Remote requests timeout"})
 
+    @Route(methods="put", resource="/system/remote")
+    def restart_bridge(self, message, response):
+        """ Restart remote broker """
+        if self.__REMOTE_ID__ is None:
+            return response(
+                code=400, data={"message": "REMOTE_ID is not enabled."})
+
+        self.bridge_process = restart_broker(self.bridge_process)
+        if self.bridge_process is None:
+            return response(
+                code=500, data={"message": "Restart remote broker failed."})
+        return response()
 
 if __name__ == "__main__":
-    # disabling sh logger
-    sh_logger = logging.getLogger("sh")
-    sh_logger.propagate = False
-    sh_logger.addHandler(logging.NullHandler())
+    # disabling sh _logger
+    sh__logger = logging.getLogger("sh")
+    sh__logger.propagate = False
+    sh__logger.addHandler(logging.NullHandler())
     FORMAT = "%(asctime)s - %(levelname)s - %(lineno)s - %(message)s"
     logging.basicConfig(level=0, format=FORMAT)
-    logger = logging.getLogger("Remote")
+    _logger = logging.getLogger("Remote")
     index = Index(connection=Mqtt())
     index.start()
