@@ -12,6 +12,11 @@ from sanji.core import Route
 from sanji.session import TimeoutError
 from sanji.connection.mqtt import Mqtt
 
+from voluptuous import Schema
+from voluptuous import REMOVE_EXTRA
+from voluptuous import Range
+from voluptuous import All
+
 _logger = logging.getLogger("sanji.remote")
 prefixPath = os.path.dirname(os.path.realpath(__file__))
 
@@ -47,31 +52,43 @@ def generate_server_conf(
         }))
 
 
+def stop_broker(process=None):
+    if process:
+        _logger.debug("Killing previous broker via process")
+        process.kill()
+        return
+
+    try:
+        pid = sh.awk(
+            sh.grep(sh.ps("ax"), "sanji-bridge"), "{print $1}").split()
+        sh.kill(" ".join(pid))
+        _logger.debug("Killing previous broker via pid")
+    except:
+        pass
+
+
+def start_broker():
+    ret = sh.mosquitto(
+        "-c", "/etc/mosquitto/sanji-bridge.conf", _bg=True)
+    _logger.debug("Bridge broker started.")
+
+    return ret.process
+
+
 def restart_broker(process=None):
     try:
-        if process:
-            _logger.debug("Killing previous broker via process")
-            process.kill()
-        else:
-            try:
-                pid = sh.awk(
-                    sh.grep(sh.ps("ax"), "sanji-bridge"), "{print $1}").split()
-                sh.kill(" ".join(pid))
-                _logger.debug("Killing previous broker via pid")
-            except:
-                pass
-
-        ret = sh.mosquitto(
-            "-c", "/etc/mosquitto/sanji-bridge.conf", _bg=True)
-        _logger.debug("Bridge broker started.")
-
-        return ret.process
+        stop_broker(process)
+        return start_broker()
     except Exception as e:
-        _logger.debug("restart error: %s" % str(e), exc_info=True)
+        _logger.debug("Restart error: %s" % str(e), exc_info=True)
         return None
 
 
 class Index(Sanji):
+
+    SCHEMA = Schema({
+        "enable": All(int, Range(min=0, max=1))
+    }, extra=REMOVE_EXTRA)
 
     def init(self, *args, **kwargs):
         # Local Broker
@@ -167,12 +184,16 @@ class Index(Sanji):
             return response(
                 code=500, data={"message": "Remote requests timeout"})
 
-    @Route(methods="put", resource="/system/remote")
+    @Route(methods="put", resource="/system/remote", schema=SCHEMA)
     def restart_bridge(self, message, response):
         """ Restart remote broker """
         if self.__REMOTE_ID__ is None:
             return response(
                 code=400, data={"message": "REMOTE_ID is not enabled."})
+
+        if message.data["enable"] == 0:
+            stop_broker(self.bridge_process)
+            return response()
 
         self.bridge_process = restart_broker(self.bridge_process)
         if self.bridge_process is None:
