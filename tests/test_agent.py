@@ -23,47 +23,12 @@ else:
 try:
     sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../")
     from agent import generate_conf
-    from agent import restart_broker
     from agent import Index
 except ImportError as e:
     raise e
 
 
 class TestFunctionClass(unittest.TestCase):
-
-    def test_generate_bridge_conf(self):
-        """ should generate bridge config """
-        output = "connection sanji-remote-test-id\naddress localhost\n" +\
-                 "clientid test-id\ncleansession true\n" +\
-                 "topic # in 2 / /test-id/\ntopic /+/controller out 2\n" +\
-                 "topic /+/remote out 2\nnotifications true\n" +\
-                 "notification_topic /cgs/test-id/connection_status\n" +\
-                 "bridge_identity test_id\nbridge_psk test_psk\n"
-        path = os.path.dirname(os.path.realpath(__file__))
-
-        with open(path + "/../conf/bridge.conf.tmpl") as f:
-            tmpl = f.read()
-            m = mock_open()
-            with patch("agent.open", m, create=True):
-                mock = m()
-                mock.read.return_value = tmpl
-                generate_conf({
-                    "id": "test-id",
-                    "address": "localhost",
-                    "bridge_identity": "test_id",
-                    "bridge_psk": "test_psk"
-                },
-                    path + "/../conf/bridge.conf.tmpl",
-                    "/tmp/test-bridge.conf"
-                )
-
-                self.assertEqual(m.mock_calls[1],
-                                 call(path + "/../conf/bridge.conf.tmpl"))
-                self.assertEqual(m.mock_calls[5],
-                                 call("/tmp/test-bridge.conf", "w"))
-
-            mock = m()
-            mock.write.assert_called_once_with(output)
 
     def test_generate_encrypt_conf(self):
         """ should generate encrypt config """
@@ -129,17 +94,6 @@ class TestFunctionClass(unittest.TestCase):
 
             mock = m()
             mock.write.assert_called_once_with(output)
-
-    def test_restart_broker_true(self):
-        """ should restart broker via service """
-        with patch("agent.sh.service"):
-            self.assertTrue(restart_broker())
-
-    def test_restart_broker_false(self):
-        """ should restart broker via service with exception"""
-        with patch("agent.sh.service") as service:
-            service.side_effect = Exception("error")
-            self.assertFalse(restart_broker())
 
 
 class TestIndexClass(unittest.TestCase):
@@ -221,6 +175,6 @@ class TestIndexClass(unittest.TestCase):
 
 if __name__ == "__main__":
     FORMAT = "%(asctime)s - %(levelname)s - %(lineno)s - %(message)s"
-    logging.basicConfig(level=0, format=FORMAT)
+    logging.basicConfig(level=20, format=FORMAT)
     logger = logging.getLogger("Index")
     unittest.main()
