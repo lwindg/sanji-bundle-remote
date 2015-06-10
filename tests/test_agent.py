@@ -32,32 +32,33 @@ class TestFunctionClass(unittest.TestCase):
 
     def test_generate_encrypt_conf(self):
         """ should generate encrypt config """
-        output = "listener 8883\n" +\
+        output = "listener 8883 0.0.0.0\n" +\
                  "psk_file /etc/mosquitto/psk-list\n" +\
                  "psk_hint hint\n"
 
         path = os.path.dirname(os.path.realpath(__file__))
-        with open(path + "/../conf/tls_psk_listener.conf.tmpl") as f:
+        with open(path + "/../conf/external_listener.conf.tmpl") as f:
             tmpl = f.read()
             m = mock_open()
             with patch("agent.open", m, create=True):
                 mock = m()
                 mock.read.return_value = tmpl
                 generate_conf({
-                    "encrypt_port": 8883,
-                    "psk_file": "/etc/mosquitto/psk-list",
-                    "psk_hint": "hint"
+                    "external_port": 8883,
+                    "external_host": "0.0.0.0",
+                    "psk_secret": "psk_file /etc/mosquitto/psk-list\n" +
+                                  "psk_hint hint"
                 },
-                    path + "/../conf/tls_psk_listener.conf.tmpl",
-                    "/tmp/tls_psk_listener.conf"
+                    path + "/../conf/external_listener.conf.tmpl",
+                    "/tmp/external_listener.conf"
                 )
 
                 self.assertEqual(
                     m.mock_calls[1],
-                    call(path + "/../conf/tls_psk_listener.conf.tmpl"))
+                    call(path + "/../conf/external_listener.conf.tmpl"))
                 self.assertEqual(
                     m.mock_calls[5],
-                    call("/tmp/tls_psk_listener.conf", "w"))
+                    call("/tmp/external_listener.conf", "w"))
 
             mock = m()
             mock.write.assert_called_once_with(output)
@@ -100,7 +101,8 @@ class TestIndexClass(unittest.TestCase):
 
     @patch("agent.restart_broker")
     @patch("agent.generate_conf")
-    def setUp(self, generate_conf, restart_broker):
+    @patch("agent.sh")
+    def setUp(self, sh, generate_conf, restart_broker):
         os.environ["REMOTE_HOST"] = "192.168.1.254"
         self.index = Index(connection=Mockup())
         self.index.__REMOTE_ID__ = "This-is-__REMOTE_ID__"

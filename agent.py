@@ -35,17 +35,17 @@ def generate_conf(data, templ_file, conf_file):
 
 def generate_server_conf(
     port,
-    templ_file="%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
-    conf_file="/etc/mosquitto/conf.d/tls_psk_listener.conf"
+    templ_file="%s/conf/external_listener.conf.tmpl" % prefixPath,
+    conf_file="/etc/mosquitto/conf.d/external_listener.conf"
 ):
     """ Generate mosquitto conf from Template """
 
-    _logger.debug("load tls_psk_listener config template")
+    _logger.debug("load external_listener config template")
     with open(templ_file) as f:
         template_str = f.read()
     tmpl = Template(template_str)
 
-    _logger.debug("write tls_psk_listener.conf to %s" % conf_file)
+    _logger.debug("write external_listener.conf to %s" % conf_file)
     with open(conf_file, "w") as f:
         f.write(tmpl.substitute({
             "port": port
@@ -104,8 +104,10 @@ class Index(Sanji):
         self.__BG_ID__ = os.getenv("BG_ID", None)
         self.__BG_PSK__ = os.getenv("BG_PSK", None)
 
-        # Setup for PSK encrypt port
-        self.__ENCRYPT_PORT__ = os.getenv("ENCRYPT_PORT", None)
+        # Setup for EXTERNAL Port and Host
+        self.__EXTERNAL_PORT__ = os.getenv("EXTERNAL_PORT", None)
+        self.__EXTERNAL_HOST__ = os.getenv("EXTERNAL_HOST", None)
+        self.__TLS_ENABLED__ = os.getenv("TLS_ENABLED", False)
         self.__PSK_FILE__ = os.getenv(
             "PSK_FILE", "/etc/mosquitto/psk-list")
         self.__PSK_HINT__ = os.getenv("PSK_HINT", "hint")
@@ -119,17 +121,32 @@ class Index(Sanji):
             "/etc/mosquitto/mosquitto.conf"
         )
 
-        if self.__ENCRYPT_PORT__ is not None:
+        if self.__EXTERNAL_PORT__ is not None \
+                and self.__EXTERNAL_HOST__ is not None:
+            psk_secret = ""
+            if self.__TLS_ENABLED__ == "true":
+                psk_secret = ("psk_file %s\npsk_hint %s" %
+                              (self.__PSK_FILE__, self.__PSK_HINT__))
+                _logger.debug("Enable PSK Secret with psk-file: %s" %
+                              self.__PSK_FILE__)
             generate_conf({
-                "encrypt_port": self.__ENCRYPT_PORT__,
-                "psk_file": self.__PSK_FILE__,
-                "psk_hint": self.__PSK_HINT__
+                "external_port": self.__EXTERNAL_PORT__,
+                "external_host": self.__EXTERNAL_HOST__,
+                "psk_secret": psk_secret
             },
-                "%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
-                "/etc/mosquitto/conf.d/tls_psk_listener.conf"
+                "%s/conf/external_listener.conf.tmpl" % prefixPath,
+                "/etc/mosquitto/conf.d/external_listener.conf"
             )
-            _logger.debug("Enable encrypt port: %s with psk-file: %s" %
-                          (self.__ENCRYPT_PORT__, self.__PSK_FILE__))
+            _logger.debug("Enable external port: %s with psk-file: %s" %
+                          (self.__EXTERNAL_PORT__, self.__PSK_FILE__))
+        else:
+            try:
+                os.remove("/etc/mosquitto/conf.d/external_listener.conf")
+                _logger.debug("Remove old encrypt port config.")
+            except:
+                pass
+
+        sh.service("mosquitto", "restart")
 
         if self.__REMOTE_ID__ is not None:
             bridge_secret = ""
