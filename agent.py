@@ -52,33 +52,38 @@ def generate_server_conf(
         }))
 
 
-def stop_broker(process=None):
+def stop_broker(process=None, config=None):
     if process:
         _logger.debug("Killing previous broker via process")
         process.kill()
         return
 
+    if config is None:
+        raise RuntimeError("Start broker with config: None")
+
     try:
         pid = sh.awk(
-            sh.grep(sh.ps("ax"), "sanji-bridge"), "{print $1}").split()
+            sh.grep(sh.ps("ax"), config), "{print $1}").split()
         sh.kill(" ".join(pid))
         _logger.debug("Killing previous broker via pid")
     except:
         pass
 
 
-def start_broker():
-    ret = sh.mosquitto(
-        "-c", "/etc/mosquitto/sanji-bridge.conf", _bg=True)
+def start_broker(config=None):
+    if config is None:
+        raise RuntimeError("Start broker with config: None")
+
+    ret = sh.mosquitto("-c", config, _bg=True)
     _logger.debug("Bridge broker started.")
 
     return ret.process
 
 
-def restart_broker(process=None):
+def restart_broker(process=None, config=None):
     try:
-        stop_broker(process)
-        return start_broker()
+        stop_broker(process=process, config=config)
+        return start_broker(config=config)
     except Exception as e:
         _logger.debug("Restart error: %s" % str(e), exc_info=True)
         return None
@@ -130,23 +135,19 @@ class Index(Sanji):
                 _logger.debug("Enable PSK Secret with psk-file: %s" %
                               self.__PSK_FILE__)
             generate_conf({
+                "id": self.__LOCAL_ID__,
                 "external_port": self.__EXTERNAL_PORT__,
                 "external_host": self.__EXTERNAL_HOST__,
                 "psk_secret": psk_secret
             },
                 "%s/conf/external_listener.conf.tmpl" % prefixPath,
-                "/etc/mosquitto/conf.d/external_listener.conf"
+                "/etc/mosquitto/sanji-external.conf"
             )
             _logger.debug("Enable external port: %s with psk-file: %s" %
                           (self.__EXTERNAL_PORT__, self.__PSK_FILE__))
-        else:
-            try:
-                os.remove("/etc/mosquitto/conf.d/external_listener.conf")
-                _logger.debug("Remove old encrypt port config.")
-            except:
-                pass
 
-        sh.service("mosquitto", "restart")
+            self.external_process = restart_broker(
+                process=None, config="/etc/mosquitto/sanji-external.conf")
 
         if self.__REMOTE_ID__ is not None:
             bridge_secret = ""
@@ -165,7 +166,8 @@ class Index(Sanji):
             )
             _logger.debug("Enable bridge mode connect to: %s:%s" %
                           (self.__REMOTE_HOST__, self.__REMOTE_PORT__))
-            self.bridge_process = restart_broker(None)
+            self.bridge_process = restart_broker(
+                process=None, config="/etc/mosquitto/sanji-bridge.conf")
 
     def run(self):
         if self.__REMOTE_ID__ is None:

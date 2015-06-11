@@ -32,9 +32,16 @@ class TestFunctionClass(unittest.TestCase):
 
     def test_generate_encrypt_conf(self):
         """ should generate encrypt config """
-        output = "listener 8883 0.0.0.0\n" +\
+        output = "bind_address 0.0.0.0\n" +\
+                 "port 8883\n" +\
+                 "persistence false\n" +\
                  "psk_file /etc/mosquitto/psk-list\n" +\
-                 "psk_hint hint\n"
+                 "psk_hint hint\n\n" +\
+                 "connection sanji-internel\n" +\
+                 "address localhost:1883\n" +\
+                 "clientid server-internel\n" +\
+                 "cleansession true\n" +\
+                 "topic # both 2\n"
 
         path = os.path.dirname(os.path.realpath(__file__))
         with open(path + "/../conf/external_listener.conf.tmpl") as f:
@@ -44,6 +51,7 @@ class TestFunctionClass(unittest.TestCase):
                 mock = m()
                 mock.read.return_value = tmpl
                 generate_conf({
+                    "id": "server",
                     "external_port": 8883,
                     "external_host": "0.0.0.0",
                     "psk_secret": "psk_file /etc/mosquitto/psk-list\n" +
