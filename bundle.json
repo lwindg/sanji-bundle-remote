@@ -1,6 +1,6 @@
 {
   "name": "remote",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "author": "Zack YL Shih",
   "email": "ZackYL.Shih@moxa.com",
   "description": "Proxying all local views.",
