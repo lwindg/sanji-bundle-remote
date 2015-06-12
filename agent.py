@@ -63,11 +63,11 @@ def stop_broker(process=None, config=None):
 
     try:
         pid = sh.awk(
-            sh.grep(sh.ps("ax"), config), "{print $1}").split()
+            sh.grep(sh.ps("ax", _tty_out=False), config), "{print $1}").split()
         sh.kill(" ".join(pid))
         _logger.debug("Killing previous broker via pid")
-    except:
-        pass
+    except Exception as e:
+        _logger.debug(str(e), exc_info=True)
 
 
 def start_broker(config=None):
