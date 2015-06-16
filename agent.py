@@ -11,6 +11,7 @@ from sanji.core import Sanji
 from sanji.core import Route
 from sanji.session import TimeoutError
 from sanji.connection.mqtt import Mqtt
+from clear_notification import clear_notification
 
 from voluptuous import Schema
 from voluptuous import REMOVE_EXTRA
@@ -146,6 +147,7 @@ class Index(Sanji):
             _logger.debug("Enable external port: %s with psk-file: %s" %
                           (self.__EXTERNAL_PORT__, self.__PSK_FILE__))
 
+            clear_notification()
             self.external_process = restart_broker(
                 process=None, config="/etc/mosquitto/sanji-external.conf")
 
@@ -214,10 +216,13 @@ class Index(Sanji):
             stop_broker(self.bridge_process)
             return response()
 
-        self.bridge_process = restart_broker(self.bridge_process)
+        self.bridge_process = restart_broker(
+            process=None, config="/etc/mosquitto/sanji-bridge.conf")
+
         if self.bridge_process is None:
             return response(
                 code=500, data={"message": "Restart remote broker failed."})
+
         return response()
 
 if __name__ == "__main__":
