@@ -1,0 +1,10 @@
+bind_address $external_host
+port $external_port
+persistence false
+$psk_secret
+
+connection sanji-internel
+address localhost:1883
+clientid $id-internel
+cleansession true
+topic # both 2

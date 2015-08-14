@@ -11,6 +11,7 @@ from sanji.core import Sanji
 from sanji.core import Route
 from sanji.session import TimeoutError
 from sanji.connection.mqtt import Mqtt
+from clear_notification import clear_notification
 
 from voluptuous import Schema
 from voluptuous import REMOVE_EXTRA
@@ -35,50 +36,55 @@ def generate_conf(data, templ_file, conf_file):
 
 def generate_server_conf(
     port,
-    templ_file="%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
-    conf_file="/etc/mosquitto/conf.d/tls_psk_listener.conf"
+    templ_file="%s/conf/external_listener.conf.tmpl" % prefixPath,
+    conf_file="/etc/mosquitto/conf.d/external_listener.conf"
 ):
     """ Generate mosquitto conf from Template """
 
-    _logger.debug("load tls_psk_listener config template")
+    _logger.debug("load external_listener config template")
     with open(templ_file) as f:
         template_str = f.read()
     tmpl = Template(template_str)
 
-    _logger.debug("write tls_psk_listener.conf to %s" % conf_file)
+    _logger.debug("write external_listener.conf to %s" % conf_file)
     with open(conf_file, "w") as f:
         f.write(tmpl.substitute({
             "port": port
         }))
 
 
-def stop_broker(process=None):
+def stop_broker(process=None, config=None):
     if process:
         _logger.debug("Killing previous broker via process")
         process.kill()
         return
 
+    if config is None:
+        raise RuntimeError("Start broker with config: None")
+
     try:
         pid = sh.awk(
-            sh.grep(sh.ps("ax"), "sanji-bridge"), "{print $1}").split()
+            sh.grep(sh.ps("ax", _tty_out=False), config), "{print $1}").split()
         sh.kill(" ".join(pid))
         _logger.debug("Killing previous broker via pid")
-    except:
-        pass
+    except Exception as e:
+        _logger.debug(str(e), exc_info=True)
 
 
-def start_broker():
-    ret = sh.mosquitto(
-        "-c", "/etc/mosquitto/sanji-bridge.conf", _bg=True)
+def start_broker(config=None):
+    if config is None:
+        raise RuntimeError("Start broker with config: None")
+
+    ret = sh.mosquitto("-c", config, _bg=True)
     _logger.debug("Bridge broker started.")
 
     return ret.process
 
 
-def restart_broker(process=None):
+def restart_broker(process=None, config=None):
     try:
-        stop_broker(process)
-        return start_broker()
+        stop_broker(process=process, config=config)
+        return start_broker(config=config)
     except Exception as e:
         _logger.debug("Restart error: %s" % str(e), exc_info=True)
         return None
@@ -104,8 +110,10 @@ class Index(Sanji):
         self.__BG_ID__ = os.getenv("BG_ID", None)
         self.__BG_PSK__ = os.getenv("BG_PSK", None)
 
-        # Setup for PSK encrypt port
-        self.__ENCRYPT_PORT__ = os.getenv("ENCRYPT_PORT", None)
+        # Setup for EXTERNAL Port and Host
+        self.__EXTERNAL_PORT__ = os.getenv("EXTERNAL_PORT", None)
+        self.__EXTERNAL_HOST__ = os.getenv("EXTERNAL_HOST", None)
+        self.__TLS_ENABLED__ = os.getenv("TLS_ENABLED", False)
         self.__PSK_FILE__ = os.getenv(
             "PSK_FILE", "/etc/mosquitto/psk-list")
         self.__PSK_HINT__ = os.getenv("PSK_HINT", "hint")
@@ -119,17 +127,29 @@ class Index(Sanji):
             "/etc/mosquitto/mosquitto.conf"
         )
 
-        if self.__ENCRYPT_PORT__ is not None:
+        if self.__EXTERNAL_PORT__ is not None \
+                and self.__EXTERNAL_HOST__ is not None:
+            psk_secret = ""
+            if self.__TLS_ENABLED__ == "true":
+                psk_secret = ("psk_file %s\npsk_hint %s" %
+                              (self.__PSK_FILE__, self.__PSK_HINT__))
+                _logger.debug("Enable PSK Secret with psk-file: %s" %
+                              self.__PSK_FILE__)
             generate_conf({
-                "encrypt_port": self.__ENCRYPT_PORT__,
-                "psk_file": self.__PSK_FILE__,
-                "psk_hint": self.__PSK_HINT__
+                "id": self.__LOCAL_ID__,
+                "external_port": self.__EXTERNAL_PORT__,
+                "external_host": self.__EXTERNAL_HOST__,
+                "psk_secret": psk_secret
             },
-                "%s/conf/tls_psk_listener.conf.tmpl" % prefixPath,
-                "/etc/mosquitto/conf.d/tls_psk_listener.conf"
+                "%s/conf/external_listener.conf.tmpl" % prefixPath,
+                "/etc/mosquitto/sanji-external.conf"
             )
-            _logger.debug("Enable encrypt port: %s with psk-file: %s" %
-                          (self.__ENCRYPT_PORT__, self.__PSK_FILE__))
+            _logger.debug("Enable external port: %s with psk-file: %s" %
+                          (self.__EXTERNAL_PORT__, self.__PSK_FILE__))
+
+            clear_notification()
+            self.external_process = restart_broker(
+                process=None, config="/etc/mosquitto/sanji-external.conf")
 
         if self.__REMOTE_ID__ is not None:
             bridge_secret = ""
@@ -148,7 +168,8 @@ class Index(Sanji):
             )
             _logger.debug("Enable bridge mode connect to: %s:%s" %
                           (self.__REMOTE_HOST__, self.__REMOTE_PORT__))
-            self.bridge_process = restart_broker(None)
+            self.bridge_process = restart_broker(
+                process=None, config="/etc/mosquitto/sanji-bridge.conf")
 
     def run(self):
         if self.__REMOTE_ID__ is None:
@@ -195,10 +216,13 @@ class Index(Sanji):
             stop_broker(self.bridge_process)
             return response()
 
-        self.bridge_process = restart_broker(self.bridge_process)
+        self.bridge_process = restart_broker(
+            process=None, config="/etc/mosquitto/sanji-bridge.conf")
+
         if self.bridge_process is None:
             return response(
                 code=500, data={"message": "Restart remote broker failed."})
+
         return response()
 
 if __name__ == "__main__":
